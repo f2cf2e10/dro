@@ -12,19 +12,17 @@ torch.set_default_dtype(torch.float64)
 transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Lambda(lambda x: torch.nn.Flatten(1, x.dim()-1)(x)[0])])
-target_transform = transforms.Lambda(lambda y: 2*(y - 0.5))
+target_transform = transforms.Lambda(lambda y: y)
 
 # Using only 0s and 1s
 digits = [0, 1]
-mnist_train = datasets.MNIST("../data", train=True, download=True,
+mnist_train = datasets.MNIST("./data", train=True, download=True,
                              transform=transform, target_transform=target_transform)
-zeros_ones_train = list(filter(lambda x: np.isin(
-    x[1], [2*(y - 0.5) for y in digits]), mnist_train))  # zero and ones
+zeros_ones_train = list(filter(lambda x: np.isin(x[1], digits), mnist_train))  # zero and ones
 
-mnist_test = datasets.MNIST("../data", train=False, download=True,
+mnist_test = datasets.MNIST("./data", train=False, download=True,
                             transform=transform, target_transform=target_transform)
-zeros_ones_test = list(filter(lambda x: np.isin(
-    x[1], [2 * (d - 0.5) for d in digits]), mnist_test))  # zero and ones
+zeros_ones_test = list(filter(lambda x: np.isin(x[1], digits), mnist_test))  # zero and ones
 
 d = 784
 batch_size = 100
@@ -43,7 +41,7 @@ train_and_eval(train_data, test_data, epochs,
                model, loss_fn, optimizer, device)
 eval_test(test_data, model, loss_fn, device)
 
-epsilon = 0.2
+epsilon = 0.1
 attack = FastGradientSignMethod(model, loss_fn, epsilon) 
 test_data_adv = generate_attack_loop(test_data, attack, device)
 eval_test(test_data_adv, model, loss_fn, device)
