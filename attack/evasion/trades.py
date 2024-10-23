@@ -6,22 +6,21 @@ import torch
 class Trades(ABC):
     criterion_kl = torch.nn.KLDivLoss(size_average=False)
 
-    def generate(self, x, y=None) -> torch.utils.data.Dataset:
+    def generate(self, model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor = None) -> torch.utils.data.Dataset:
         if y is None:
-            y = self.model(x)
-        return Trades.trades(self.model, self.loss_fn, x, y, self.epsilon,
-                              self.alpha, self.k)
+            y = model(x)
+        return Trades.trades(model, self.loss_fn, x, y, self.epsilon, self.alpha, self.k)
 
     @staticmethod
     def trades(model: torch.nn.Module,
-                loss_fn: torch.nn.Module,
-                x,
-                y,
-                epsilon: float,
-                perturb_steps: float,
-                beta: float,
-                sigma: float,
-                domain: Tuple[float, float]):
+               loss_fn: torch.nn.Module,
+               x,
+               y,
+               epsilon: float,
+               perturb_steps: float,
+               beta: float,
+               sigma: float,
+               domain: Tuple[float, float]):
         batch_size = len(x)
         x_nat = torch.clone(x)
         x_adv = torch.clamp(x_nat + sigma * torch.randn_like(x_nat),

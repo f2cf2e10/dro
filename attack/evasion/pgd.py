@@ -1,27 +1,26 @@
 from abc import ABC
 from typing import Tuple
 import torch
+from attack.evasion.interface import EvasionAttack
 from utils.types import Norm
 
 
-class ProjectecGradientDescent(ABC):
-    def __init__(self, model: torch.nn.Module, loss_fn: torch.nn.Module,
-                 norm: Norm, proj: Norm, epsilon: float, alpha: float = 0.025,
-                 k: int = 100, domain: Tuple[float, float] = None) -> None:
-        self.model = model
+class ProjectecGradientDescent(EvasionAttack):
+    def __init__(self, loss_fn: torch.nn.Module, norm: Norm, proj: Norm, epsilon: float,
+                 domain: Tuple[float, float], alpha: float = 0.025, k: int = 100) -> None:
         self.loss_fn = loss_fn
         self.norm = norm
         self.proj = proj
         self.alpha = alpha
         self.k = k
         self.epsilon = epsilon
-        self.domain = [0., 1.] if domain is None else domain
+        self.domain = domain
 
-    def generate(self, x, y=None) -> torch.utils.data.Dataset:
+    def generate(self, model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor = None) -> torch.utils.data.Dataset:
         if y is None:
-            y = self.model(x)
+            y = model(x)
         return ProjectecGradientDescent.projected_gradient_descent_norm_method(
-            self.model, self.loss_fn, self.norm, self.proj, x, y, self.epsilon,
+            model, self.loss_fn, self.norm, self.proj, x, y, self.epsilon,
             self.alpha, self.k, self.domain)
 
     @staticmethod
