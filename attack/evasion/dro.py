@@ -1,6 +1,5 @@
 from abc import ABC
 from typing import Callable, Tuple
-import cvxopt
 import numpy as np
 import torch
 import clarabel
