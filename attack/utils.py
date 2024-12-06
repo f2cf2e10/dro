@@ -41,8 +41,8 @@ def eval_adversary(dataloader, dataloader_adv, model, device, eval_fn):
             if torch.any(y != y_adv):
                 print("Data is not aligned!!!!")
                 break
-            yp = model(x)[:, 0]
-            yp_adv = model(x_adv)[:, 0]
+            yp = model(x)
+            yp_adv = model(x_adv)
             model_correct_adversary_wrong_idx = torch.logical_and(
                 eval_fn(y, yp), torch.logical_not(eval_fn(yp, yp_adv)))
             if torch.any(model_correct_adversary_wrong_idx):

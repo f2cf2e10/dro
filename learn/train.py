@@ -11,16 +11,16 @@ def train_loop(dataloader, model, loss_fn, optimizer, device):
     model.train()
     for batch, (x_i, y_i) in enumerate(dataloader):
         x, y = x_i.to(device), y_i.to(device)
-        yp = model(x)[:, 0]
-        loss = loss_fn(yp, y.double())
+        y_hat = model(x)
+        loss = loss_fn(y_hat, y)
         # Backpropagation
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
         if batch % 50 == 0:
-            loss, current = loss.item(), batch * dataloader.batch_size + len(x)
-            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+            current = batch * dataloader.batch_size + len(x)
+            print(f"loss: {loss.item():>7f}  [{current:>5d}/{size:>5d}]")
 
 
 def eval_test(dataloader, model, loss_fn, device, eval_fn, agg_fn):
@@ -35,9 +35,9 @@ def eval_test(dataloader, model, loss_fn, device, eval_fn, agg_fn):
     with torch.no_grad():
         for x_i, y_i in dataloader:
             x, y = x_i.to(device), y_i.to(device)
-            yp = model(x)[:, 0]
-            test_loss += loss_fn(yp, y.double()).item()
-            correct += agg_fn(eval_fn(y, yp))
+            y_hat = model(x)
+            test_loss += loss_fn(y_hat, y).item()
+            correct += agg_fn(eval_fn(y, y_hat))
     test_loss /= num_batches
     correct /= size
     print(
@@ -60,8 +60,8 @@ def adv_train_loop(dataloader, model, attack, loss_fn, optimizer, device):
     for batch, (x_i, y_i) in enumerate(dataloader):
         x, y = x_i.to(device), y_i.to(device)
         x_adv = attack.generate(model=model, x=x, y=y)
-        yp = model(x_adv)[:, 0]
-        loss = loss_fn(yp, y.double())
+        y_hat = model(x_adv)
+        loss = loss_fn(y_hat, y)
         # Backpropagation
         optimizer.zero_grad()
         loss.backward()

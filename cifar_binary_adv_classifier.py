@@ -10,9 +10,9 @@ from attack.utils import generate_attack_loop, eval_adversary
 
 torch.set_default_dtype(torch.float64)
 torch.manual_seed(171)
-# Using only 2 digits for a linear classifier
+# airplane(0), cat(3) and dog(5)
 domain = [0., 1.]
-digits = [0, 1]
+images = [0, 5]
 labels = [0., 1.]
 loss_fn = torch.nn.BCEWithLogitsLoss()
 loss_fn_adv = loss_fn
@@ -30,30 +30,31 @@ def agg_fn(x): return x.sum().item()
 # getting and transforming data
 transform = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Lambda(lambda x: torch.nn.Flatten(1, x.dim()-1)(x)[0])])
+    transforms.Lambda(lambda x: torch.nn.Flatten(1, x.dim()-1)(x)),
+    transforms.Lambda(lambda x: torch.nn.Flatten(0, x.dim()-1)(x))])
 target_transform = transforms.Lambda(lambda y: y)
 
 
-mnist_train = datasets.MNIST("./data", train=True, download=True,
-                             transform=transform, target_transform=target_transform)
-two_digits_train = list(filter(lambda x: np.isin(
-    x[1], digits), mnist_train))
-two_digits_train = [(x[0], labels[0] if x[1] == digits[0] else labels[1])
-                    for x in two_digits_train]
+cifar_train = datasets.CIFAR10("./data", train=True, download=True,
+                               transform=transform, target_transform=target_transform)
+two_images_train = list(filter(lambda x: np.isin(
+    x[1], images), cifar_train))
+two_images_train = [(x[0], labels[0] if x[1] == images[0] else labels[1])
+                    for x in two_images_train]
 
-mnist_test = datasets.MNIST("./data", train=False, download=True,
-                            transform=transform, target_transform=target_transform)
-two_digits_test = list(filter(lambda x: np.isin(
-    x[1], digits), mnist_test))
-two_digits_test = [(x[0], labels[0] if x[1] == digits[0] else labels[1])
-                   for x in two_digits_test]
+cifar_test = datasets.CIFAR10("./data", train=False, download=True,
+                              transform=transform, target_transform=target_transform)
+two_images_test = list(filter(lambda x: np.isin(
+    x[1], images), cifar_test))
+two_images_test = [(x[0], labels[0] if x[1] == images[0] else labels[1])
+                   for x in two_images_test]
 
-d = 28*28
+d = 3*32*32
 batch_size = 64
 train_data_plain = torch.utils.data.DataLoader(
-    two_digits_train, batch_size=batch_size, shuffle=False)
+    two_images_train, batch_size=batch_size, shuffle=False)
 test_data_plain = torch.utils.data.DataLoader(
-    two_digits_test, batch_size=batch_size, shuffle=False)
+    two_images_test, batch_size=batch_size, shuffle=False)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -61,13 +62,12 @@ models = {
     'plain': Linear(d, 1, device),
 }
 
-epsilon = 0.1
+epsilon = 0.2
 attacks = {
     'fgsm': FastGradientSignMethod(loss_fn_adv, epsilon, domain),
 }
-# [0.0, 0.0001, 0.001, 0.002, 0.003, 0.004, 0.005, 0.01, 0.1, 1.0]:
-for lamb in [0.001]:
-    attacks['dro_lambda_' + str(lamb)] = Dro(loss_fn=loss_fn_adv, zeta=epsilon, domain=domain,
+for lamb in [0.0, 0.0001, 0.001, 0.002, 0.003, 0.004, 0.005, 0.01, 0.1, 1.0]:
+    attacks['dro_lambda_' + str(lamb)] = Dro(loss_fn=loss_fn_adv, zeta=d*epsilon, domain=domain,
                                              max_steps=50, lamb=lamb)
 optimizers = {'plain': torch.optim.SGD(models['plain'].parameters(), lr=0.001)}
 
@@ -101,16 +101,16 @@ for attack_name in attacks.keys():
         test_data_plain, attacks[attack_name], models['plain'], device)
 
 # Adversarial model training
-for attack_name in attacks.keys():
-    adv_train_and_eval(train_data_plain, test_data_plain, epochs_adv, models[attack_name],
-                       attacks[attack_name], loss_fn, optimizers[attack_name], device, eval_fn, agg_fn)
+# for attack_name in attacks.keys():
+#    adv_train_and_eval(train_data_plain, test_data_plain, epochs_adv, models[attack_name],
+#                       attacks[attack_name], loss_fn, optimizers[attack_name], device, eval_fn, agg_fn)
 
 # Adversarial model attacks
-for model_name in train_data_adv_model_attack.keys():
-    if model_name != 'plain':
-        for attack_name in attacks.keys():
-            train_data_adv_model_attack[model_name][attack_name] = generate_attack_loop(
-                train_data_plain, attacks[attack_name], models[model_name], device)
+# for model_name in train_data_adv_model_attack.keys():
+#    if model_name != 'plain':
+#        for attack_name in attacks.keys():
+#            train_data_adv_model_attack[model_name][attack_name] = generate_attack_loop(
+#                train_data_plain, attacks[attack_name], models[model_name], device)
 
 for model_name in train_data_adv_model_attack.keys():
     print("=== MODEL for attack {} ===".format(model_name))
@@ -140,12 +140,12 @@ fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
 ax1.imshow(torch.nn.Unflatten(0, (28, 28))(
     test_data_plain.dataset[i][0]).detach().cpu().numpy(), cmap='gray')
 ax1.set_title(
-    'Original: ' + str(digits[int(test_data_plain.dataset[i][1])]))
+    'Original: ' + str(images[int(test_data_plain.dataset[i][1])]))
 ax2.imshow(torch.nn.Unflatten(0, (28, 28))(
     train_data_adv_model_attack['plain'][attack_name_1].dataset[i][0]).detach().cpu().numpy(), cmap='gray')
 ax2.set_title(attack_name_1 + ' classified as ' +
-              str(digits[1*(models['plain'](train_data_adv_model_attack['plain'][attack_name_1].dataset[i][0]) > 0)]))
+              str(images[1*(models['plain'](train_data_adv_model_attack['plain'][attack_name_1].dataset[i][0]) > 0)]))
 ax3.imshow(torch.nn.Unflatten(0, (28, 28))(
     train_data_adv_model_attack['plain'][attack_name_2].dataset[i][0]).detach().cpu().numpy(), cmap='gray')
 ax3.set_title('DRO classified as ' +
-              str(digits[1*(models['plain'](train_data_adv_model_attack['plain'][attack_name_2].dataset[i][0]) > 0)]))
+              str(images[1*(models['plain'](train_data_adv_model_attack['plain'][attack_name_2].dataset[i][0]) > 0)]))
