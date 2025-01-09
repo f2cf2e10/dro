@@ -11,7 +11,8 @@
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
 
-	"workspaceMount": "source=dro,target=/workspace,type=volume",
+	//"workspaceMount": "source=dro,target=/workspace,type=volume",
+	"workspaceMount": "source=${localEnv:HOME}/dro,target=/workspace,type=bind",
     "workspaceFolder": "/workspace",
 
 	// Use 'postCreateCommand' to run commands after the container is created.
