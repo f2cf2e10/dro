@@ -1,9 +1,8 @@
-import sys
 import matplotlib.pyplot as plt
 import numpy as np
 from torchvision import datasets, transforms
 import torch
-from models import Linear, LinearMatrix
+from models import LinearFlat, LinearMatrix
 from learn.train import train_and_eval
 
 torch.set_default_dtype(torch.float64)
@@ -58,7 +57,7 @@ train_data, test_data = prepare_data(transforms.ToTensor(), target_transform)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-linear = Linear(d*d, 1, device)
+linear = LinearFlat(d*d, 1, device)
 linearMatrix = LinearMatrix(d, d, device)
 optimizer_linear = torch.optim.SGD(linear.parameters(), lr=0.001)
 optimizer_linearMatrix = torch.optim.SGD(linearMatrix.parameters(), lr=0.001)

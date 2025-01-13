@@ -1,7 +1,7 @@
 import torch
 
 
-def Linear(in_features: int, out_features: int, device) -> torch.nn.Module:
+def LinearFlat(in_features: int, out_features: int, device) -> torch.nn.Module:
     linear = torch.nn.Sequential(
         torch.nn.Linear(in_features=in_features,
                         out_features=out_features,
@@ -9,6 +9,24 @@ def Linear(in_features: int, out_features: int, device) -> torch.nn.Module:
         torch.nn.Flatten(0, -1))
 
     return linear
+
+
+def LinearMatrix(in_nrows: int, in_ncols: int, device) -> torch.nn.Module:
+
+    class LinearMatrix(torch.nn.Module):
+        def __init__(self, in_nrows: int, in_ncols: int):
+            super().__init__()
+            sqrt_k = 1./(in_nrows*in_ncols)**0.5
+            self.A = torch.nn.Parameter(
+                2*(torch.rand(in_nrows, in_ncols)-0.5)*sqrt_k)
+            self.b = torch.nn.Parameter(2*(torch.rand(1)-0.5)*sqrt_k)
+
+        def forward(self, x):
+            return torch.mul(self.A, x).sum(1).sum(1)
+
+    model = LinearMatrix(in_nrows, in_ncols)
+    model.to(device)
+    return model
 
 
 def CNN(in_channels: int, n_classes: int, device) -> torch.nn.Module:
@@ -30,21 +48,3 @@ def CNN(in_channels: int, n_classes: int, device) -> torch.nn.Module:
         torch.nn.Linear(in_features=84, out_features=n_classes, device=device),
     )
     return cnn
-
-
-def LinearMatrix(in_nrows: int, in_ncols: int, device) -> torch.nn.Module:
-
-    class LinearMatrix(torch.nn.Module):
-        def __init__(self, in_nrows: int, in_ncols: int):
-            super().__init__()
-            sqrt_k = 1./(in_nrows*in_ncols)**0.5
-            self.A = torch.nn.Parameter(
-                2*(torch.rand(in_nrows, in_ncols)-0.5)*sqrt_k)
-            self.b = torch.nn.Parameter(2*(torch.rand(1)-0.5)*sqrt_k)
-
-        def forward(self, x):
-            return torch.mul(self.A, x).sum(1).sum(1)
-
-    model = LinearMatrix(in_nrows, in_ncols)
-    model.to(device)
-    return model

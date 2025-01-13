@@ -12,11 +12,15 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "Python Debugger: nist_0_1",
+            "name": "Python Debugger: nist_bin_adv_class",
             "type": "debugpy",
             "request": "launch",
-            "program": "nist_0_1.py",
-            "console": "integratedTerminal"
+            "cwd": "${workspaceFolder}",
+            "program": "./scripts/nist_binary_adv_classifier.py",
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${cwd}"
+            }
         }
     ]
 }
