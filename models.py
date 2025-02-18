@@ -22,7 +22,9 @@ def LinearMatrix(in_nrows: int, in_ncols: int, device) -> torch.nn.Module:
             self.b = torch.nn.Parameter(2*(torch.rand(1)-0.5)*sqrt_k)
 
         def forward(self, x):
-            return torch.mul(self.A, x).sum(1).sum(1)
+            x_ = torch.mul(self.A, x) 
+            n = x_.dim()
+            return x_.sum(list(range(n-2,  n))) + self.b
 
     model = LinearMatrix(in_nrows, in_ncols)
     model.to(device)

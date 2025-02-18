@@ -2,22 +2,25 @@ import matplotlib.pyplot as plt
 import numpy as np
 from torchvision import datasets, transforms
 import torch
-from attack.evasion import FastGradientSignMethod, Dro, DroEntropic
+from attack.evasion import FastGradientSignMethod, DroEntropic, DroMinCorrectClassifier
 from models import LinearMatrix
 from learn.train import adv_train_and_eval, train_and_eval, eval_test
 from attack.utils import generate_attack_loop, eval_adversary
+from utils.loss import correctclassification_softmargin_surrogate, missclassification_softmargin_surrogate
 
 torch.set_default_dtype(torch.float64)
-torch.manual_seed(171)
+# torch.manual_seed(171)
 # Using only 2 digits for a linear classifier
 domain = [0., 1.]
 digits = [0, 1]
-labels = [0., 1.]
-loss_fn = torch.nn.BCEWithLogitsLoss()
-loss_fn_adv = loss_fn
+labels = [-1., 1.]
+loss_fn = missclassification_softmargin_surrogate
+loss_fn_adv = correctclassification_softmargin_surrogate
 
 
-def eval_fn(y, yp): return (1*(y > 0) == 1*(yp > 0))
+#labels = [0., 1.]
+#def eval_fn(y, yp): return (1*(y > 0) == 1*(yp > 0))
+def eval_fn(y, yp): return (torch.sign(y * yp) > 0)
 def agg_fn(x): return x.sum().item()
 
 # labels = [-1, 1]
@@ -27,28 +30,31 @@ def agg_fn(x): return x.sum().item()
 
 
 # getting and transforming data
-transform = transforms.ToTensor()
-target_transform = transforms.Lambda(lambda y: y)
+a_true = np.array([-4, -3.5])
+b_true = 3.75
 
 
-mnist_train = datasets.MNIST("./data", train=True, download=True,
-                             transform=transform, target_transform=target_transform)
-two_digits_train = list(filter(lambda x: np.isin(
-    x[1], digits), mnist_train))
-two_digits_train = [(x[0][0], labels[0] if x[1] == digits[0] else labels[1])
-                    for x in two_digits_train]
+def f_x(x):
+    y = (a_true.dot(x.T) + b_true)
+    return np.sign(y)
 
-mnist_test = datasets.MNIST("./data", train=False, download=True,
-                            transform=transform, target_transform=target_transform)
-two_digits_test = list(filter(lambda x: np.isin(
-    x[1], digits), mnist_test))
-two_digits_test = [(x[0][0], labels[0] if x[1] == digits[0] else labels[1])
-                   for x in two_digits_test]
 
-d = 28
-batch_size = 64
+N = 1000
+x = np.random.rand(N, 2)
+y = f_x(x)
+two_digits_train = [(x[[i]], y[i]) for i in range(N)]
+
+
+# getting and transforming data
+N = 250
+x = np.random.rand(N, 2)
+y = f_x(x)
+two_digits_test = [(x[[i]], y[i]) for i in range(N)]
+
+d = 2
+batch_size = 100
 train_data_plain = torch.utils.data.DataLoader(
-    two_digits_train, batch_size=batch_size, shuffle=False)
+    two_digits_train, batch_size=batch_size, shuffle=True)
 test_data_plain = torch.utils.data.DataLoader(
     two_digits_test, batch_size=batch_size, shuffle=False)
 
@@ -58,24 +64,15 @@ models = {
     'plain': LinearMatrix(d, d, device),
 }
 
-epsilon = 0.1
+epsilon = 0.05 
 attacks = {
-    'fgsm': FastGradientSignMethod(loss_fn_adv, epsilon, domain),
+    'fgsm': FastGradientSignMethod(loss_fn, epsilon, domain),
+    'dro': DroMinCorrectClassifier(loss_fn_adv, epsilon, domain, 0.001, 1000)
 }
-for lamb in [5000.]:
-    # attacks['dro_lambda_' + str(lamb)] = Dro(loss_fn=loss_fn_adv, zeta=d*d*epsilon, domain=domain,
-    #                                         max_steps=50, lamb=lamb)
-    attacks['dro_entropic_lambda_' + str(lamb)] = DroEntropic(loss_fn=loss_fn_adv, zeta=epsilon,
-                                                              domain=domain, max_steps=50, lamb=lamb)
 optimizers = {'plain': torch.optim.SGD(models['plain'].parameters(), lr=0.001)}
 
-epochs = 100
+epochs = 1000
 epochs_adv = 50
-
-# original_stdout = sys.stdout  # Save a reference to the original standard output
-
-# with open('output.txt', 'w') as f:
-#    sys.stdout = f  # Change the standard output to the file we created
 
 # Plain model training with plain data
 train_and_eval(train_data_plain, test_data_plain, epochs, models['plain'],
@@ -123,7 +120,7 @@ for model_name in test_data_adv_model_attack.keys():
 
 # Analysis
 attack_name_1 = 'fgsm'
-attack_name_2 = 'dro_entropic_lambda_5000.0'
+attack_name_2 = 'dro'
 
 i_attack_1, x_attack_1, y_attack_1, x_adv_attack_1, y_adv_attack_1 = eval_adversary(
     test_data_plain, test_data_adv_model_attack['plain'][attack_name_1], models['plain'], device, eval_fn)
@@ -144,4 +141,3 @@ ax3.imshow(test_data_adv_model_attack['plain'][attack_name_2].dataset[i][0].deta
 ).cpu().numpy(), cmap='gray')
 ax3.set_title(attack_name_1 + ' classified as ' + str(digits[
     1*(models['plain'](test_data_adv_model_attack['plain'][attack_name_2].dataset[i][0]) > 0)]))
-

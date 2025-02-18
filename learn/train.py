@@ -52,7 +52,7 @@ def train_and_eval(train_data, test_data, epochs, model, loss_fn, optimizer, dev
     print("Finished!")
 
 
-def adv_train_loop(dataloader, model, attack, loss_fn, optimizer, device): 
+def adv_train_loop(dataloader, model, attack, loss_fn, optimizer, device):
     size = len(dataloader.dataset)
     # Set the model to training mode - important for batch normalization and dropout layers
     # Unnecessary in this situation but added for best practices
@@ -66,6 +66,7 @@ def adv_train_loop(dataloader, model, attack, loss_fn, optimizer, device):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        # Check: https://discuss.pytorch.org/t/restrict-range-of-variable-during-gradient-descent/1933/3
 
         if batch % 50 == 0:
             loss, current = loss.item(), batch * dataloader.batch_size + len(x)
@@ -75,6 +76,7 @@ def adv_train_loop(dataloader, model, attack, loss_fn, optimizer, device):
 def adv_train_and_eval(train_data, test_data, epochs, model, attack, loss_fn, optimizer, device, eval_fn, agg_fn):
     for t in range(epochs):
         print(f"Epoch {t+1}\n-------------------------------")
-        adv_train_loop(train_data, model, attack, loss_fn, optimizer, device)
+        adv_train_loop(train_data, model, attack,
+                       loss_fn, optimizer, device)
         eval_test(test_data, model, loss_fn, device, eval_fn, agg_fn)
     print("Finished!")

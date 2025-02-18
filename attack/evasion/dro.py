@@ -30,7 +30,7 @@ class Dro(EvasionAttack):
     def dro_W1_adv_data_driven_attack_ccp_opt(model: torch.nn.Module, loss_fn: torch.nn.Module, x: torch.Tensor,
                                               y: torch.Tensor, zeta: torch.Tensor, max_steps: int, domain: Tuple[float, float],
                                               lamb: float = 0.0, tol: float = 1E-6) -> np.array:
-        n, nrow, ncol = x.shape
+        n, *_, nrow, ncol = x.shape
         d = nrow * ncol
         x_tensor_flat = x.flatten()
         x_flat = x_tensor_flat.detach().cpu().numpy()
@@ -104,7 +104,7 @@ class DroEntropic(EvasionAttack):
         self.p = 1
 
     def generate(self, model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor = None) -> torch.utils.data.Dataset:
-        _, nrow, ncol = x.shape
+        *_, nrow, ncol = x.shape
         d = nrow * ncol
         C = torch.zeros((d, d))
         for i_row in range(nrow):
@@ -124,7 +124,7 @@ class DroEntropic(EvasionAttack):
     def dro_W1_adv_data_driven_attack_ccp_entropic(model: torch.nn.Module, loss_fn: torch.nn.Module, x: torch.Tensor,
                                                    y: torch.Tensor, C: torch.Tensor, zeta: torch.Tensor, max_steps: int,
                                                    lamb: float = 0.0, tol: float = 1E-6) -> np.array:
-        n, nrow, ncol = x.shape
+        n, *_ = x.shape
         v = torch.rand_like(x, requires_grad=True)
         v.requires_grad_()
         y_hat = model(v)
@@ -169,7 +169,7 @@ class DroEntropic(EvasionAttack):
                     gamma = gamma - t*delta_gamma
                 counter += 1
             v = torch.mul(P.sum(1).T, normalization).T.reshape_as(v)
-            #v = P.sum(1).reshape_as(v)
+            # v = P.sum(2).reshape_as(v)
             v.requires_grad_()
 
             loss_old = loss
@@ -178,3 +178,92 @@ class DroEntropic(EvasionAttack):
             if ((loss - loss_old).abs() <= tol).cpu().detach().numpy():
                 break
         return v
+
+
+class DroMinCorrectClassifier(EvasionAttack):
+
+    def __init__(self, loss_fn: torch.nn.Module, zeta: float, domain: Tuple[float, float],
+                 eta: float, max_iter: int, tol: float = 1E-6) -> None:
+        self.loss_fn = loss_fn
+        self.zeta = zeta
+        self.domain = domain
+        self.eta = eta
+        self.max_iter = max_iter
+        self.tol = tol
+
+    def generate(self, model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor = None) -> torch.utils.data.Dataset:
+        if y is None:
+            y = model(x)
+        return DroMinCorrectClassifier.projected_gradient_descent_method(model, self.loss_fn, x, y,
+                                                                         self.zeta, self.eta, self.max_iter,
+                                                                         self.domain, self.tol)
+
+    @staticmethod
+    def projected_gradient_descent_method(model: torch.nn.Module,
+                                          loss_fn: torch.nn.Module,
+                                          x: torch.utils.data.Dataset,
+                                          y: torch.utils.data.Dataset,
+                                          epsilon: float, eta: float,
+                                          max_iter: int, domain: Tuple[float, float],
+                                          tol: float):
+        x_adv = torch.clone(x)
+        x_adv.requires_grad = True
+        n, *_, nrow, ncol = x.shape
+        d = nrow * ncol
+        x_tensor_flat = x.flatten()
+        x_flat = x_tensor_flat.detach().cpu().numpy()
+        old_loss = np.inf
+        for _ in range(max_iter):
+            y_hat = model(x_adv)
+            if y_hat.shape != y.shape:
+                y_hat = y_hat[:, 0]
+            model.zero_grad()
+            loss = loss_fn(y_hat.flatten(), y.float())
+            loss.backward()
+            if np.abs(loss.item() - old_loss) <= tol:
+                break
+            old_loss = loss.item()
+            # Gradient update
+            w = x_adv - eta * x_adv.grad
+            # Projection
+            val = np.hstack([[1.0/n]*d*n,
+                             [-1.0]*d*n,
+                             [-1.0]*d*n,
+                             [1.0]*d*n,
+                             [-1.0]*d*n,
+                             [-1.0]*d*n,
+                             [1.0]*d*n,
+                             [-1.0]*d*n])
+            row = np.hstack([[0]*(d*n),
+                             np.arange(1, d*n+1),
+                             np.arange(1, d*n+1),
+                             np.arange(d*n+1, 2*d*n+1),
+                             np.arange(d*n+1, 2*d*n+1),
+                             np.arange(2*d*n+1, 3*d*n+1),
+                             np.arange(3*d*n+1, 4*d*n+1),
+                             np.arange(4*d*n+1, 5*d*n+1)])
+            col = np.hstack([np.arange(d*n, 2*d*n),
+                             np.arange(d*n),
+                             np.arange(d*n, 2*d*n),
+                             np.arange(d*n),
+                             np.arange(d*n, 2*d*n),
+                             np.arange(d*n, 2*d*n),
+                             np.arange(d*n),
+                             np.arange(d*n)])
+            A = sparse.csc_matrix((val, (row, col)), shape=(5*d*n+1, 2*d*n))
+            b = np.hstack([epsilon, -1.0 * x_flat, x_flat, np.zeros(d*n),
+                           domain[1]*np.ones(d*n), -1.0 * domain[0]*np.ones(d*n)])
+            P = sparse.csc_matrix(([1.0] * d * n, (range(d*n), range(d*n))),
+                                  shape=(2*d*n, 2*d*n))
+            cones = [clarabel.NonnegativeConeT(5*d*n+1)]
+            settings = clarabel.DefaultSettings()
+            settings.verbose = True
+            q = np.hstack([-2*w.flatten().detach().cpu().numpy(),
+                           np.zeros(d*n)])
+            solver = clarabel.DefaultSolver(P, q, A, b, cones, settings)
+            sol = solver.solve()
+            v = sol.x[0:n*d]
+            s = sol.x[n*d:]
+            x_adv = torch.Tensor(np.array(v)).reshape_as(x).to(device=x.device)
+            x_adv.requires_grad_()
+        return x_adv
