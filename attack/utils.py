@@ -50,10 +50,10 @@ def eval_adversary(dataloader, dataloader_adv, model, device, eval_fn):
                     [missclassified_x_adv, x_adv[model_correct_adversary_wrong_idx]])
                 missclassified_x = x[model_correct_adversary_wrong_idx] if missclassified_x is None else torch.vstack(
                     [missclassified_x, x[model_correct_adversary_wrong_idx]])
-                missclassified_y_adv = yp_adv[model_correct_adversary_wrong_idx] if missclassified_y_adv is None else torch.hstack(
-                    [missclassified_y_adv, yp_adv[model_correct_adversary_wrong_idx]])
-                missclassified_y = y[model_correct_adversary_wrong_idx] if missclassified_y is None else torch.hstack(
-                    [missclassified_y, y[model_correct_adversary_wrong_idx]])
+                #missclassified_y_adv = yp_adv[model_correct_adversary_wrong_idx] if missclassified_y_adv is None else torch.hstack(
+                #    [missclassified_y_adv, yp_adv[model_correct_adversary_wrong_idx]])
+                #missclassified_y = y[model_correct_adversary_wrong_idx] if missclassified_y is None else torch.hstack(
+                #    [missclassified_y, y[model_correct_adversary_wrong_idx]])
                 items += [batch_items[i] for i in range(
                     len(model_correct_adversary_wrong_idx)) if model_correct_adversary_wrong_idx[i]]
     return items, missclassified_x, missclassified_y, missclassified_x_adv, missclassified_y_adv

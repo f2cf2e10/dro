@@ -1,70 +1,86 @@
 import matplotlib.pyplot as plt
+import numpy as np
 from torchvision import datasets, transforms
 import torch
-from attack.evasion.dro import DroEntropic
-from attack.evasion.fgsm import FastGradientSignMethod
-from attack.utils import generate_attack_loop
-from models import CNN
-from learn.train import eval_test, train_and_eval
+from attack.evasion import FastGradientSignMethod, DroMinCorrectClassifier
+from models import LinearMatrix
+from learn.train import adv_train_and_eval, train_and_eval, eval_test
+from attack.utils import generate_attack_loop, eval_adversary
 
 torch.set_default_dtype(torch.float64)
-torch.manual_seed(171)
+# torch.manual_seed(171)
+# Using only 2 digits for a linear classifier
+domain = [0., 1.]
+digits = [3, 8]
+labels = [0., 1.]
+loss_fn = torch.nn.BCEWithLogitsLoss()
 
 
-def class_fn(yp): return yp.argmax(dim=1)
-def eval_fn(y, yp): return y == class_fn(yp)
+def loss_fn_adv(input, target):
+    return loss_fn(-input, target)
+
+
+# labels = [0., 1.]
+def eval_fn(y, yp): return (1*(y > 0) == 1*(yp > 0))
+# labels = [-1., 1.]
+# def eval_fn(y, yp): return (torch.sign(y * yp) > 0)
 def agg_fn(x): return x.sum().item()
 
+# labels = [-1, 1]
+# loss_fn = torch.nn.SoftMarginLoss()
+# def eval_fn(y, yp): return ((y * yp) > 0)
+# def agg_fn(x): return x.sum().item()
 
-domain = [0., 1.]
-channels = 1
-n_classes = 10
 
 # getting and transforming data
-transform = transforms.Compose([transforms.ToTensor()])
-target_transform = transforms.Compose([transforms.Lambda(lambda y: y)])
+transform = transforms.ToTensor()
+target_transform = transforms.Lambda(lambda y: y)
+
 
 mnist_train = datasets.MNIST("./data", train=True, download=True,
                              transform=transform, target_transform=target_transform)
+two_digits_train = list(filter(lambda x: np.isin(
+    x[1], digits), mnist_train))
+two_digits_train = [(x[0][0], labels[0] if x[1] == digits[0] else labels[1])
+                    for x in two_digits_train]
 
 mnist_test = datasets.MNIST("./data", train=False, download=True,
                             transform=transform, target_transform=target_transform)
+two_digits_test = list(filter(lambda x: np.isin(
+    x[1], digits), mnist_test))
+two_digits_test = [(x[0][0], labels[0] if x[1] == digits[0] else labels[1])
+                   for x in two_digits_test]
 
-batch_size = 100
+d = 28
+batch_size = 64
 train_data_plain = torch.utils.data.DataLoader(
-    mnist_train, batch_size=batch_size, shuffle=False)
+    two_digits_train, batch_size=batch_size, shuffle=False)
 test_data_plain = torch.utils.data.DataLoader(
-    mnist_test, batch_size=batch_size, shuffle=False)
+    two_digits_test, batch_size=batch_size, shuffle=False)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-loss_fn = torch.nn.CrossEntropyLoss()
-loss_fn_adv = loss_fn
-
 models = {
-    'plain': CNN(channels, n_classes, device),
+    'plain': LinearMatrix(d, d, device),
 }
 
 epsilon = 0.1
 attacks = {
-    'fgsm': FastGradientSignMethod(loss_fn_adv, epsilon, domain),
+    'fgsm': FastGradientSignMethod(loss_fn, epsilon, domain),
+    'dro': DroMinCorrectClassifier(loss_fn_adv, 500*epsilon, domain, 0.1, 100000)
 }
-for lamb in [5000.]:
-    # attacks['dro_lambda_' + str(lamb)] = Dro(loss_fn=loss_fn_adv, zeta=d*d*epsilon, domain=domain,
-    #                                         max_steps=50, lamb=lamb)
-    attacks['dro_entropic_lambda_' + str(lamb)] = DroEntropic(loss_fn=loss_fn_adv, zeta=epsilon,
-                                                              domain=domain, max_steps=50, lamb=lamb)
 optimizers = {'plain': torch.optim.SGD(models['plain'].parameters(), lr=0.001)}
-
 
 epochs = 100
 epochs_adv = 50
+
 # Plain model training with plain data
 train_and_eval(train_data_plain, test_data_plain, epochs, models['plain'],
                loss_fn, optimizers['plain'], device, eval_fn, agg_fn)
 
+# Start instances for adv trained models with starting parameters starting at the plain trained model
 for attack_name in attacks.keys():
-    models[attack_name] = CNN(channels, n_classes, device)
+    models[attack_name] = LinearMatrix(d, d, device)
     optimizers[attack_name] = torch.optim.SGD(
         models[attack_name].parameters(), lr=0.001)
 
@@ -80,6 +96,23 @@ for attack_name in attacks.keys():
     test_data_adv_model_attack['plain'][attack_name] = generate_attack_loop(
         test_data_plain, attacks[attack_name], models['plain'], device)
 
+# Analysis
+print("  = Test data plain =")
+eval_test(test_data_plain, models['plain'],
+          loss_fn, device, eval_fn, agg_fn)
+N = len(test_data_plain.dataset)
+for attack_name in test_data_adv_model_attack['plain'].keys():
+    print("  = Test data {} =".format(attack_name))
+    avg_change = sum([(test_data_adv_model_attack['plain'][attack_name].dataset[i][0] -
+                       test_data_plain.dataset[i][0]).abs().sum().item() for i in range(N)])/N
+    print(f"Average abs move per sample: {avg_change}")
+    eval_test(test_data_adv_model_attack['plain'][attack_name], models['plain'],
+              loss_fn, device, eval_fn, agg_fn)
+
+# Adversarial model training
+for attack_name in attacks.keys():
+    adv_train_and_eval(train_data_plain, test_data_plain, epochs_adv, models[attack_name],
+                       attacks[attack_name], loss_fn, optimizers[attack_name], device, eval_fn, agg_fn)
 # Adversarial model attacks
 for model_name in test_data_adv_model_attack.keys():
     if model_name != 'plain':
@@ -99,7 +132,7 @@ for model_name in test_data_adv_model_attack.keys():
 
 # Analysis
 attack_name_1 = 'fgsm'
-attack_name_2 = 'dro_entropic_lambda_5000.0'
+attack_name_2 = 'dro'
 
 i_attack_1, x_attack_1, y_attack_1, x_adv_attack_1, y_adv_attack_1 = eval_adversary(
     test_data_plain, test_data_adv_model_attack['plain'][attack_name_1], models['plain'], device, eval_fn)
@@ -120,4 +153,3 @@ ax3.imshow(test_data_adv_model_attack['plain'][attack_name_2].dataset[i][0].deta
 ).cpu().numpy(), cmap='gray')
 ax3.set_title(attack_name_1 + ' classified as ' + str(digits[
     1*(models['plain'](test_data_adv_model_attack['plain'][attack_name_2].dataset[i][0]) > 0)]))
-

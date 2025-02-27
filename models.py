@@ -22,7 +22,7 @@ def LinearMatrix(in_nrows: int, in_ncols: int, device) -> torch.nn.Module:
             self.b = torch.nn.Parameter(2*(torch.rand(1)-0.5)*sqrt_k)
 
         def forward(self, x):
-            x_ = torch.mul(self.A, x) 
+            x_ = torch.mul(self.A, x)
             n = x_.dim()
             return x_.sum(list(range(n-2,  n))) + self.b
 
@@ -31,15 +31,15 @@ def LinearMatrix(in_nrows: int, in_ncols: int, device) -> torch.nn.Module:
     return model
 
 
-def CNN(in_channels: int, n_classes: int, device) -> torch.nn.Module:
+def CNN(in_channels: int, n_classes: int, kernel_size: int, device) -> torch.nn.Module:
     cnn = torch.nn.Sequential(
         torch.nn.Conv2d(in_channels=in_channels,
-                        out_channels=6, kernel_size=3,
+                        out_channels=6, kernel_size=kernel_size,
                         device=device),
         torch.nn.ReLU(),
         torch.nn.MaxPool2d(kernel_size=2),
         torch.nn.Conv2d(in_channels=6, out_channels=16,
-                        kernel_size=3, device=device),
+                        kernel_size=kernel_size, device=device),
         torch.nn.ReLU(),
         torch.nn.MaxPool2d(kernel_size=2),
         torch.nn.Flatten(1, -1),
