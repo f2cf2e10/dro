@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from torchvision import datasets, transforms
 import torch
-from attack.evasion import FastGradientSignMethod, DroEntropic, DroMinCorrectClassifier
+from attack.evasion import FastGradientSignMethod, DroEntropic, DroMirroredLoss
 from models import LinearMatrix
 from learn.train import adv_train_and_eval, train_and_eval, eval_test
 from attack.utils import generate_attack_loop, eval_adversary
@@ -70,7 +70,7 @@ models = {
 epsilon = 0.05
 attacks = {
     'fgsm': FastGradientSignMethod(loss_fn, epsilon, domain),
-    'dro': DroMinCorrectClassifier(loss_fn_adv, epsilon, domain, 0.1, 1000)
+    'dro': DroMirroredLoss(loss_fn_adv, epsilon, domain, 0.1, 1000)
 }
 optimizers = {'plain': torch.optim.SGD(models['plain'].parameters(), lr=0.001)}
 

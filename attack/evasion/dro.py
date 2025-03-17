@@ -133,13 +133,14 @@ class DroEntropic(EvasionAttack):
         x_flat = x.flatten(1)
         normalization = x_flat.sum(1)
         x_flat = torch.div(x_flat.T, normalization).T
-        for _ in range(max_steps):
+        for step in range(max_steps):
             model.zero_grad()
             loss.backward(retain_graph=True)
             beta = -lamb * v.grad.flatten(1)
             alpha = np.log(1./n) * torch.ones_like(beta)
             gamma = 1
             counter = 0
+            P = None
             while counter < max_steps:
                 alpha = torch.log(
                     torch.sum(
@@ -147,6 +148,7 @@ class DroEntropic(EvasionAttack):
                                   - gamma * C.unsqueeze(0)  # Shape: (1, d, d)
                                   - 1),
                         dim=2)) - torch.log(x_flat)  # Shape: (n, d)
+                P_old = P
                 P = torch.exp(
                     - alpha.unsqueeze(2)  # Shape: (n, d, 1)
                     - beta.unsqueeze(1)  # Shape: (n, 1, d)
@@ -176,11 +178,12 @@ class DroEntropic(EvasionAttack):
             y_hat = model(v)
             loss = loss_fn(y_hat, y)
             if ((loss - loss_old).abs() <= tol).cpu().detach().numpy():
+                print(f"converged after {step} steps")
                 break
         return v
 
 
-class DroMinCorrectClassifier(EvasionAttack):
+class DroMirroredLoss(EvasionAttack):
 
     def __init__(self, loss_fn: torch.nn.Module, zeta: float, domain: Tuple[float, float],
                  eta: float, max_iter: int, tol: float = 1E-6) -> None:
@@ -194,7 +197,7 @@ class DroMinCorrectClassifier(EvasionAttack):
     def generate(self, model: torch.nn.Module, x: torch.Tensor, y: torch.Tensor = None) -> torch.utils.data.Dataset:
         if y is None:
             y = model(x)
-        return DroMinCorrectClassifier.projected_gradient_descent_method(model, self.loss_fn, x, y,
+        return DroMirroredLoss.projected_gradient_descent_method(model, self.loss_fn, x, y,
                                                                          self.zeta, self.eta, self.max_iter,
                                                                          self.domain, self.tol)
 
@@ -220,11 +223,11 @@ class DroMinCorrectClassifier(EvasionAttack):
             if y_hat.shape != y.shape:
                 y_hat = y_hat[:, 0]
             loss = loss_fn(y_hat.flatten(), y.float())
-            optimizer.zero_grad()
-            loss.backward()
             if np.abs(loss.item() - old_loss) <= tol:
                 print("       Converged")
                 return x_adv
+            optimizer.zero_grad()
+            loss.backward()
             old_loss = loss.item()
             optimizer.step()
             if (x_adv - x).abs().sum().item() > n*epsilon:

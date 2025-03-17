@@ -4,8 +4,8 @@ import torch.utils
 from attack.evasion.interface import EvasionAttack
 
 
-def train_loop(dataloader, model, loss_fn, optimizer, device, epoch, mlflow=None):
-    print(f"Epoch {epoch+1}\n-------------------------------")
+def train_loop(dataloader, model, loss_fn, optimizer, device, step, mlflow=None):
+    print(f"Epoch {step}\n-------------------------------")
     size = len(dataloader.dataset)
     # Set the model to training mode - important for batch normalization and dropout layers
     # Unnecessary in this situation but added for best practices
@@ -24,10 +24,10 @@ def train_loop(dataloader, model, loss_fn, optimizer, device, epoch, mlflow=None
             print(f"loss: {loss.item():>7f}  [{current:>5d}/{size:>5d}]")
     print(f"loss: {loss.item():>7f}  [{current:>5d}/{size:>5d}]")
     if mlflow is not None:
-        mlflow.log_metric("train_loss", loss.item(), step=epoch)
+        mlflow.log_metric("train_loss", loss.item(), step=step)
 
 
-def eval_test(dataloader, model, loss_fn, device, eval_fn, agg_fn, mlflow=None):
+def eval_test(dataloader, model, loss_fn, device, eval_fn, agg_fn, step, mlflow=None):
     # Set the model to evaluation mode - important for batch normalization and dropout layers
     model.eval()
     size = len(dataloader.dataset)
@@ -47,20 +47,21 @@ def eval_test(dataloader, model, loss_fn, device, eval_fn, agg_fn, mlflow=None):
     print(
         f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
     if mlflow is not None:
-        mlflow.log_metric("test_loss", test_loss)
-        mlflow.log_metric("test_acc", 100*correct)
+        mlflow.log_metric("test_loss", test_loss, step=step)
+        mlflow.log_metric("test_acc", 100*correct, step=step)
 
 
 def train_and_eval(train_data, test_data, epochs, model, loss_fn, optimizer, device, eval_fn, agg_fn, mlflow=None):
     for epoch in range(epochs):
         train_loop(train_data, model, loss_fn,
                    optimizer, device, epoch+1, mlflow)
-        eval_test(test_data, model, loss_fn, device, eval_fn, agg_fn, mlflow)
+        eval_test(test_data, model, loss_fn, device,
+                  eval_fn, agg_fn, epoch+1, mlflow)
     print("Finished!")
 
 
 def adv_train_loop(dataloader, model, attack, loss_fn, optimizer, device, epoch, mlflow=None):
-    print(f"Epoch {t+1}\n-------------------------------")
+    print(f"Epoch {epoch}\n-------------------------------")
     size = len(dataloader.dataset)
     # Set the model to training mode - important for batch normalization and dropout layers
     # Unnecessary in this situation but added for best practices
@@ -84,8 +85,8 @@ def adv_train_loop(dataloader, model, attack, loss_fn, optimizer, device, epoch,
 
 
 def adv_train_and_eval(train_data, test_data, epochs, model, attack, loss_fn, optimizer, device, eval_fn, agg_fn):
-    for t in range(epochs):
+    for epoch in range(epochs):
         adv_train_loop(train_data, model, attack,
-                       loss_fn, optimizer, device, epoch)
+                       loss_fn, optimizer, device, epoch+1)
         eval_test(test_data, model, loss_fn, device, eval_fn, agg_fn)
     print("Finished!")
