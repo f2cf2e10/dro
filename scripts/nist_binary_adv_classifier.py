@@ -1,10 +1,9 @@
-import sys
 import matplotlib.pyplot as plt
 import numpy as np
 from torchvision import datasets, transforms
 import torch
-from attack.evasion import FastGradientSignMethod, Dro
-from models import Linear
+from attack.evasion import FastGradientSignMethod, Dro, DroEntropic
+from models import LinearMatrix
 from learn.train import adv_train_and_eval, train_and_eval, eval_test
 from attack.utils import generate_attack_loop, eval_adversary
 
@@ -28,9 +27,7 @@ def agg_fn(x): return x.sum().item()
 
 
 # getting and transforming data
-transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Lambda(lambda x: torch.nn.Flatten(1, x.dim()-1)(x)[0])])
+transform = transforms.ToTensor()
 target_transform = transforms.Lambda(lambda y: y)
 
 
@@ -38,17 +35,17 @@ mnist_train = datasets.MNIST("./data", train=True, download=True,
                              transform=transform, target_transform=target_transform)
 two_digits_train = list(filter(lambda x: np.isin(
     x[1], digits), mnist_train))
-two_digits_train = [(x[0], labels[0] if x[1] == digits[0] else labels[1])
+two_digits_train = [(x[0][0], labels[0] if x[1] == digits[0] else labels[1])
                     for x in two_digits_train]
 
 mnist_test = datasets.MNIST("./data", train=False, download=True,
                             transform=transform, target_transform=target_transform)
 two_digits_test = list(filter(lambda x: np.isin(
     x[1], digits), mnist_test))
-two_digits_test = [(x[0], labels[0] if x[1] == digits[0] else labels[1])
+two_digits_test = [(x[0][0], labels[0] if x[1] == digits[0] else labels[1])
                    for x in two_digits_test]
 
-d = 28*28
+d = 28
 batch_size = 64
 train_data_plain = torch.utils.data.DataLoader(
     two_digits_train, batch_size=batch_size, shuffle=False)
@@ -58,21 +55,22 @@ test_data_plain = torch.utils.data.DataLoader(
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 models = {
-    'plain': Linear(d, 1, device),
+    'plain': LinearMatrix(d, d, device),
 }
 
 epsilon = 0.1
 attacks = {
     'fgsm': FastGradientSignMethod(loss_fn_adv, epsilon, domain),
 }
-# [0.0, 0.0001, 0.001, 0.002, 0.003, 0.004, 0.005, 0.01, 0.1, 1.0]:
-for lamb in [0.001]:
-    attacks['dro_lambda_' + str(lamb)] = Dro(loss_fn=loss_fn_adv, zeta=epsilon, domain=domain,
-                                             max_steps=50, lamb=lamb)
+for lamb in [5000.]:
+    # attacks['dro_lambda_' + str(lamb)] = Dro(loss_fn=loss_fn_adv, zeta=d*d*epsilon, domain=domain,
+    #                                         max_steps=50, lamb=lamb)
+    attacks['dro_entropic_lambda_' + str(lamb)] = DroEntropic(loss_fn=loss_fn_adv, zeta=epsilon,
+                                                              domain=domain, max_steps=50, lamb=lamb)
 optimizers = {'plain': torch.optim.SGD(models['plain'].parameters(), lr=0.001)}
 
 epochs = 100
-epochs_adv = 15
+epochs_adv = 50
 
 # original_stdout = sys.stdout  # Save a reference to the original standard output
 
@@ -85,11 +83,11 @@ train_and_eval(train_data_plain, test_data_plain, epochs, models['plain'],
 
 # Start instances for adv trained models with starting parameters starting at the plain trained model
 for attack_name in attacks.keys():
-    models[attack_name] = Linear(d, 1, device)
+    models[attack_name] = LinearMatrix(d, d, device)
     optimizers[attack_name] = torch.optim.SGD(
         models[attack_name].parameters(), lr=0.001)
 
-train_data_adv_model_attack = {
+test_data_adv_model_attack = {
     model: {
         attack_name: None for attack_name in attacks.keys()
     } for model in models.keys()
@@ -97,7 +95,8 @@ train_data_adv_model_attack = {
 
 # Plain model attacks
 for attack_name in attacks.keys():
-    train_data_adv_model_attack['plain'][attack_name] = generate_attack_loop(
+    print(f'===== {attack_name} =====')
+    test_data_adv_model_attack['plain'][attack_name] = generate_attack_loop(
         test_data_plain, attacks[attack_name], models['plain'], device)
 
 # Adversarial model training
@@ -106,46 +105,43 @@ for attack_name in attacks.keys():
                        attacks[attack_name], loss_fn, optimizers[attack_name], device, eval_fn, agg_fn)
 
 # Adversarial model attacks
-for model_name in train_data_adv_model_attack.keys():
+for model_name in test_data_adv_model_attack.keys():
     if model_name != 'plain':
         for attack_name in attacks.keys():
-            train_data_adv_model_attack[model_name][attack_name] = generate_attack_loop(
+            test_data_adv_model_attack[model_name][attack_name] = generate_attack_loop(
                 train_data_plain, attacks[attack_name], models[model_name], device)
 
-for model_name in train_data_adv_model_attack.keys():
+for model_name in test_data_adv_model_attack.keys():
     print("=== MODEL for attack {} ===".format(model_name))
     print("  = Test data plain =")
     eval_test(test_data_plain, models[model_name],
               loss_fn, device, eval_fn, agg_fn)
-    for attack_name in train_data_adv_model_attack[model_name].keys():
+    for attack_name in test_data_adv_model_attack[model_name].keys():
         print("  = Test data {} =".format(attack_name))
-        eval_test(train_data_adv_model_attack[model_name][attack_name], models[model_name],
+        eval_test(test_data_adv_model_attack[model_name][attack_name], models[model_name],
                   loss_fn, device, eval_fn, agg_fn)
 
-#    sys.stdout = original_stdout
-
-
-# TODO
+# Analysis
 attack_name_1 = 'fgsm'
-attack_name_2 = 'dro_lambda_0.001'
+attack_name_2 = 'dro_entropic_lambda_5000.0'
 
-i_fgsm, x_fgsm, y_fgsm, x_adv_fgsm, y_adv_fgsm = eval_adversary(
-    test_data_plain, train_data_adv_model_attack['plain'][attack_name_1], models['plain'], device, eval_fn)
-i_dro, x_dro, y_dro, x_adv_dro, y_adv_dro = eval_adversary(
-    test_data_plain, train_data_adv_model_attack['plain'][attack_name_2], models['plain'], device, eval_fn)
+i_attack_1, x_attack_1, y_attack_1, x_adv_attack_1, y_adv_attack_1 = eval_adversary(
+    test_data_plain, test_data_adv_model_attack['plain'][attack_name_1], models['plain'], device, eval_fn)
+i_attack_2, x_attack_2, y_attack_2, x_adv_attack_1, y_adv_attack_2 = eval_adversary(
+    test_data_plain, test_data_adv_model_attack['plain'][attack_name_2], models['plain'], device, eval_fn)
 
 # DEBUG
 i = 0
 fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
-ax1.imshow(torch.nn.Unflatten(0, (28, 28))(
-    test_data_plain.dataset[i][0]).detach().cpu().numpy(), cmap='gray')
+ax1.imshow(test_data_plain.dataset[i][0].detach().cpu().numpy(), cmap='gray')
 ax1.set_title(
     'Original: ' + str(digits[int(test_data_plain.dataset[i][1])]))
-ax2.imshow(torch.nn.Unflatten(0, (28, 28))(
-    train_data_adv_model_attack['plain'][attack_name_1].dataset[i][0]).detach().cpu().numpy(), cmap='gray')
-ax2.set_title(attack_name_1 + ' classified as ' +
-              str(digits[1*(models['plain'](train_data_adv_model_attack['plain'][attack_name_1].dataset[i][0]) > 0)]))
-ax3.imshow(torch.nn.Unflatten(0, (28, 28))(
-    train_data_adv_model_attack['plain'][attack_name_2].dataset[i][0]).detach().cpu().numpy(), cmap='gray')
-ax3.set_title('DRO classified as ' +
-              str(digits[1*(models['plain'](train_data_adv_model_attack['plain'][attack_name_2].dataset[i][0]) > 0)]))
+ax2.imshow(test_data_adv_model_attack['plain'][attack_name_1].dataset[i][0].detach(
+).cpu().numpy(), cmap='gray')
+ax2.set_title(attack_name_1 + ' classified as ' + str(digits[
+    1*(models['plain'](test_data_adv_model_attack['plain'][attack_name_1].dataset[i][0]) > 0)]))
+ax3.imshow(test_data_adv_model_attack['plain'][attack_name_2].dataset[i][0].detach(
+).cpu().numpy(), cmap='gray')
+ax3.set_title(attack_name_1 + ' classified as ' + str(digits[
+    1*(models['plain'](test_data_adv_model_attack['plain'][attack_name_2].dataset[i][0]) > 0)]))
+

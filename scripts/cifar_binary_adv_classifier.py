@@ -4,7 +4,7 @@ import numpy as np
 from torchvision import datasets, transforms
 import torch
 from attack.evasion import FastGradientSignMethod, Dro
-from models import Linear
+from models import LinearFlat
 from learn.train import adv_train_and_eval, train_and_eval, eval_test
 from attack.utils import generate_attack_loop, eval_adversary
 
@@ -59,7 +59,7 @@ test_data_plain = torch.utils.data.DataLoader(
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 models = {
-    'plain': Linear(d, 1, device),
+    'plain': LinearFlat(d, 1, device),
 }
 
 epsilon = 0.2
@@ -85,7 +85,7 @@ train_and_eval(train_data_plain, test_data_plain, epochs, models['plain'],
 
 # Start instances for adv trained models with starting parameters starting at the plain trained model
 for attack_name in attacks.keys():
-    models[attack_name] = Linear(d, 1, device)
+    models[attack_name] = LinearFlat(d, 1, device)
     optimizers[attack_name] = torch.optim.SGD(
         models[attack_name].parameters(), lr=0.001)
 

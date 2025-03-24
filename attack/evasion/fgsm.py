@@ -33,3 +33,5 @@ class FastGradientSignMethod(EvasionAttack):
         loss = loss_fn(y_hat, y.float())
         loss.backward()
         return torch.clamp(x_adv + norm.dual_dx(x_adv.grad) * epsilon, domain[0], domain[1])
+
+

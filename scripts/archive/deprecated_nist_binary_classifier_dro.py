@@ -4,7 +4,7 @@ from torchvision import datasets, transforms
 import torch
 import numpy as np
 from attack.evasion import FastGradientSignMethod, ProjectecGradientDescent, Dro
-from models import Linear 
+from models import LinearFlat 
 from learn.train import train_and_eval, eval_test
 from attack.utils import generate_attack_loop
 from utils.norm import Linf
@@ -60,7 +60,7 @@ attacks = {'dro_0.01': Dro(loss_fn, d*0.01, domain, max_steps=30),
            'dro_0.025': Dro(loss_fn, d*0.025, domain, max_steps=30),
            'dro_0.05': Dro(loss_fn, d*0.05, domain, max_steps=30),
            'dro_0.1': Dro(loss_fn, d*0.1, domain, max_steps=30)}
-models = {'plain': Linear(d, 1, device)}
+models = {'plain': LinearFlat(d, 1, device)}
 optimizers = {key: torch.optim.SGD(
     model.parameters(), lr=0.001) for key, model in zip(models.keys(), models.values())}
 test_data_adv_model_attack = {'plain': {
