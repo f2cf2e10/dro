@@ -23,7 +23,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # Parameters
 domain = [0., 1.]
-digits = [0, 1]
+digits = [3, 8]
 labels = [0., 1.]
 d = 28
 
@@ -110,9 +110,9 @@ with mlflow.start_run():
             step, epsilon, attack, "dro_mirrored")
 
 with mlflow.start_run():
-    lamb = 5000.
+    lamb = 100.
     for step, epsilon in enumerate(epsilons):
-        attack = DroEntropic(loss_fn=loss_fn, zeta=epsilon, domain=domain,
+        attack = DroEntropic(loss_fn=loss_fn, zeta=d*d*epsilon, domain=domain,
                              max_steps=50, lamb=lamb)
         generate_attack_save_data_and_log(
             step, epsilon, attack, "dro_entropic", {"lambda": lamb})

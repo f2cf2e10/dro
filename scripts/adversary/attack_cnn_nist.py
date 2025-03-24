@@ -3,7 +3,7 @@ import mlflow
 import mlflow.pytorch
 from torchvision import datasets, transforms
 import torch
-from attack.evasion.dro import DroMirroredLoss
+from attack.evasion.dro import DroEntropic, DroMirroredLoss
 from attack.evasion.fgsm import FastGradientSignMethod
 from attack.utils import generate_attack_loop
 from learn.train import eval_test
@@ -66,18 +66,19 @@ test_data = torch.utils.data.DataLoader(
     mnist_test, batch_size=batch_size, shuffle=False)
 
 
-def generate_attack_save_data_and_log(step, epsilon, attack, attack_name):
-    mlflow.log_params({
+def generate_attack_save_data_and_log(step, epsilon, attack, attack_name, extra_params=None):
+    log = {
         "learning_rate": learning_rate_adversary,
         "batch_size": batch_size,
         "epochs": epochs,
-        "model_architecture": "CNN",
+        "model_architecture": "Linear",
         "dataset_name": "MNIST",
         "type": "Attack",
         "dataset_test_size": len(test_data.dataset),
         "dataset_detail": "0-9 digits",
-        "attack": attack_name,
-    })
+        "attack": attack_name
+    }
+    mlflow.log_params(log if extra_params is None else {**log, **extra_params})
     adv_test_data = generate_attack_loop(test_data, attack, model, device)
     N = len(adv_test_data.dataset)
     abs_dev = sum([(adv_test_data.dataset[i][0] - test_data.dataset[i][0]).abs().sum().item()
@@ -103,6 +104,15 @@ with mlflow.start_run():
         generate_attack_save_data_and_log(
             step, epsilon, attack, "dro_mirrored")
 
+with mlflow.start_run():
+    lamb = 12500.
+    for step, epsilon in enumerate(epsilons):
+        attack = DroEntropic(loss_fn=loss_fn, zeta=epsilon, domain=domain,
+                             max_steps=50, lamb=lamb)
+        generate_attack_save_data_and_log(
+            step, epsilon, attack, "dro_entropic", {"lambda": lamb})
+
+
 # ANALYSIS
 analyse = False
 if analyse:
@@ -120,4 +130,3 @@ if analyse:
             "dro": [a.value for a in acc]
         })
         df = new_df if df is None else pd.concat([df, new_df])
-
